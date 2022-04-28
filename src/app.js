@@ -19,7 +19,7 @@ const mongoClient = new MongoClient(process.env.MONGO_URL);
 app.post("/participants", async (req, res) => {
   try {
     const { name } = req.body;
-
+    // JOI
     await mongoClient.connect().then(() => {
       database = mongoClient.db("bate-papo-uol");
     });
@@ -38,6 +38,35 @@ app.post("/participants", async (req, res) => {
   } catch {}
 });
 
+app.get("/participants", (req, res) => {
+  const promise = mongoClient.connect();
+  promise.then(() => {
+    database = mongoClient.db(process.env.DATABASE);
+    database
+      .collection("users")
+      .find()
+      .toArray()
+      .then((users) => {
+        res.send(users);
+      });
+  });
+  promise.catch(() => {
+    res.send(404);
+  });
+});
+
+app.get("/messages", async (req, res) => {
+    const limit = parseInt(req.query.limit);
+  try {
+    await mongoClient.connect();
+    database = mongoClient.db(process.env.DATABASE);
+    const messages = await database.collection("messages").find().toArray();
+    if(limit !== undefined){
+        res.send(messages.slice(-limit))
+    }
+    res.send(messages);
+  } catch {}
+});
 
 const port = process.env.PORT;
 app.listen(port, () =>
