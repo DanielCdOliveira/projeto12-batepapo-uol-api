@@ -9,9 +9,11 @@ const app = express();
 app.use(cors());
 app.use(json());
 dotenv.config();
-
+// DAYJS
 let hour = dayjs().format("HH:mm:ss");
 let date = dayjs().format("DD/MM/YYYY HH:mm:ss");
+//ENV
+const DATABASE = process.env.DATABASE;
 
 let database;
 const mongoClient = new MongoClient(process.env.MONGO_URL);
@@ -21,7 +23,7 @@ app.post("/participants", async (req, res) => {
     const { name } = req.body;
     // JOI
     await mongoClient.connect().then(() => {
-      database = mongoClient.db("bate-papo-uol");
+      database = mongoClient.db(DATABASE);
     });
     await database.collection("users").insertOne({
       name,
@@ -41,7 +43,7 @@ app.post("/participants", async (req, res) => {
 app.get("/participants", (req, res) => {
   const promise = mongoClient.connect();
   promise.then(() => {
-    database = mongoClient.db(process.env.DATABASE);
+    database = mongoClient.db(DATABASE);
     database
       .collection("users")
       .find()
@@ -56,18 +58,37 @@ app.get("/participants", (req, res) => {
 });
 
 app.get("/messages", async (req, res) => {
-    const limit = parseInt(req.query.limit);
-    const user = req.headers.user;
-    console.log(user);
+  const limit = parseInt(req.query.limit);
+  const user = req.headers.user;
   try {
     await mongoClient.connect();
     database = mongoClient.db(process.env.DATABASE);
-    const messages = await database.collection("messages").find({$or: [{from:user},{to:user},{to:"Todos"}]}).toArray();
-    if(limit !== undefined){
-        res.send(messages.slice(-limit))
+    const messages = await database
+      .collection("messages")
+      .find({ $or: [{ from: user }, { to: user }, { to: "Todos" }] })
+      .toArray();
+    if (limit !== undefined) {
+      res.send(messages.slice(-limit));
     }
     res.send(messages);
   } catch {}
+});
+
+app.post("/messages", async (req, res) => {
+  let message = req.body;
+  let user = req.headers.user;
+  message.from = user;
+  message.time = hour;
+  console.log(user);
+  try {
+    await mongoClient.connect();
+    database = mongoClient.db(process.env.DATABASE);
+    await database.collection("messages").insertOne({ message });
+    console.log(message);
+    res.sendStatus(201);
+  } catch {
+    res.sendStatus(500)
+  }
 });
 
 const port = process.env.PORT;
