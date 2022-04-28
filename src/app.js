@@ -28,7 +28,7 @@ app.post("/participants", async (req, res) => {
       lastStatus: Date.now(),
     });
     await database.collection("messages").insertOne({
-      from: "xxx",
+      from: name,
       to: "Todos",
       text: "entra na sala...",
       type: "status",
@@ -57,10 +57,12 @@ app.get("/participants", (req, res) => {
 
 app.get("/messages", async (req, res) => {
     const limit = parseInt(req.query.limit);
+    const user = req.headers.user;
+    console.log(user);
   try {
     await mongoClient.connect();
     database = mongoClient.db(process.env.DATABASE);
-    const messages = await database.collection("messages").find().toArray();
+    const messages = await database.collection("messages").find({$or: [{from:user},{to:user},{to:"Todos"}]}).toArray();
     if(limit !== undefined){
         res.send(messages.slice(-limit))
     }
