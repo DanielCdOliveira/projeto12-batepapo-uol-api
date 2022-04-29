@@ -4,6 +4,8 @@ import cors from "cors";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
 import dayjs from "dayjs";
+import joi from "joi"
+
 
 const app = express();
 app.use(cors());
@@ -11,33 +13,48 @@ app.use(json());
 dotenv.config();
 // DAYJS
 let hour = dayjs().format("HH:mm:ss");
-let date = dayjs().format("DD/MM/YYYY HH:mm:ss");
 //ENV
 const DATABASE = process.env.DATABASE;
-
+//Joi
+const participantsSchema = joi.object({
+  name: joi.string().min(1).required(),
+});
 let database;
 const mongoClient = new MongoClient(process.env.MONGO_URL);
 
 app.post("/participants", async (req, res) => {
   try {
-    const { name } = req.body;
-    // JOI
-    await mongoClient.connect().then(() => {
-      database = mongoClient.db(DATABASE);
-    });
+    await mongoClient.connect();
+    database = mongoClient.db(DATABASE);
+    const result = await participantsSchema.validateAsync(req.body)
+    console.log(result);
+    const doesExist = await database.collection("users").findOne({name:result.name})
+    console.log(doesExist);
+    if(doesExist){
+      res.sendStatus(409)
+      return
+    }
     await database.collection("users").insertOne({
-      name,
+      name:result.name,
       lastStatus: Date.now(),
     });
     await database.collection("messages").insertOne({
-      from: name,
+      from: result.name,
       to: "Todos",
       text: "entra na sala...",
       type: "status",
       time: hour,
     });
     res.sendStatus(201);
-  } catch {}
+    mongoClient.close();
+  } catch(error) {
+    console.log(error);
+    if(error.isJoi === true){
+      res.sendStatus(422)
+      return;
+    }
+    res.sendStatus(500)
+  }
 });
 
 app.get("/participants", (req, res) => {
@@ -121,22 +138,17 @@ async function checkUsers() {
     await mongoClient.connect();
     database = mongoClient.db(DATABASE);
     let userCollection = await database.collection("users").find().toArray();
-    console.log(userCollection);
     userCollection.forEach((user) => {
       if (Date.now() - user.lastStatus > 10000) {
-        console.log("entrou");
         database.collection("users").deleteOne({ name: user.name });
-        database
-          .collection("messages")
-          .insertOne({
-            from: user.name,
-            to: "Todos",
-            text: "sai da sala...",
-            type: "status",
-            time: hour,
-          });
+        database.collection("messages").insertOne({
+          from: user.name,
+          to: "Todos",
+          text: "sai da sala...",
+          type: "status",
+          time: hour,
+        });
       }
-    
     });
   } catch {}
 }
