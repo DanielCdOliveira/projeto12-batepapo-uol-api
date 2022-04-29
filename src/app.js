@@ -51,6 +51,7 @@ app.get("/participants", (req, res) => {
       .then((users) => {
         res.send(users);
       });
+    mongoClient.close();
   });
   promise.catch(() => {
     res.send(404);
@@ -69,6 +70,8 @@ app.get("/messages", async (req, res) => {
       .toArray();
     if (limit !== undefined) {
       res.send(messages.slice(-limit));
+      mongoClient.close();
+      return;
     }
     res.send(messages);
   } catch {}
@@ -79,13 +82,32 @@ app.post("/messages", async (req, res) => {
   let user = req.headers.user;
   message.from = user;
   message.time = hour;
-  console.log(user);
   try {
     await mongoClient.connect();
-    database = mongoClient.db(process.env.DATABASE);
+    database = mongoClient.db(DATABASE);
     await database.collection("messages").insertOne({ message });
-    console.log(message);
     res.sendStatus(201);
+    mongoClient.close();
+  } catch {
+    res.sendStatus(500);
+  }
+});
+
+app.post("/status", async (req, res) => {
+  let user = req.headers.user;
+  try {
+    await mongoClient.connect();
+    database = mongoClient.db(DATABASE);
+    let userCollection = database.collection("users")
+    let userDB = await userCollection.findOne({ name: user });
+    if (userDB === null) {
+      res.sendStatus(404);
+      mongoClient.close()
+      return;
+    }
+    await userCollection.updateOne({ name: user},{$set: {lastStatus:Date.now()}}); 
+    res.sendStatus(200);
+    mongoClient.close()
   } catch {
     res.sendStatus(500)
   }
