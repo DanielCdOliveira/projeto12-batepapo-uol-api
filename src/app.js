@@ -98,20 +98,50 @@ app.post("/status", async (req, res) => {
   try {
     await mongoClient.connect();
     database = mongoClient.db(DATABASE);
-    let userCollection = database.collection("users")
+    let userCollection = database.collection("users");
     let userDB = await userCollection.findOne({ name: user });
     if (userDB === null) {
       res.sendStatus(404);
-      mongoClient.close()
+      mongoClient.close();
       return;
     }
-    await userCollection.updateOne({ name: user},{$set: {lastStatus:Date.now()}}); 
+    await userCollection.updateOne(
+      { name: user },
+      { $set: { lastStatus: Date.now() } }
+    );
     res.sendStatus(200);
-    mongoClient.close()
+    mongoClient.close();
   } catch {
-    res.sendStatus(500)
+    res.sendStatus(500);
   }
 });
+
+async function checkUsers() {
+  try {
+    await mongoClient.connect();
+    database = mongoClient.db(DATABASE);
+    let userCollection = await database.collection("users").find().toArray();
+    console.log(userCollection);
+    userCollection.forEach((user) => {
+      if (Date.now() - user.lastStatus > 10000) {
+        console.log("entrou");
+        database.collection("users").deleteOne({ name: user.name });
+        database
+          .collection("messages")
+          .insertOne({
+            from: user.name,
+            to: "Todos",
+            text: "sai da sala...",
+            type: "status",
+            time: hour,
+          });
+      }
+    
+    });
+  } catch {}
+}
+
+setInterval(checkUsers, 2000);
 
 const port = process.env.PORT;
 app.listen(port, () =>
