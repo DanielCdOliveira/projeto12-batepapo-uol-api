@@ -4,8 +4,8 @@ import cors from "cors";
 import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
 import dayjs from "dayjs";
-import joi from "joi"
-
+import joi from "joi";
+import res from "express/lib/response";
 
 const app = express();
 app.use(cors());
@@ -19,23 +19,32 @@ const DATABASE = process.env.DATABASE;
 const participantsSchema = joi.object({
   name: joi.string().min(1).required(),
 });
-let database;
+
+const messagesSchema = joi.object({
+  to: joi.string().min(1).required(),
+  text: joi.string().min(1).required(),
+  type: joi.any().valid("message", "private_message").required(),
+});
+
 const mongoClient = new MongoClient(process.env.MONGO_URL);
+await mongoClient.connect();
+let database = mongoClient.db(DATABASE);
 
 app.post("/participants", async (req, res) => {
+  console.log(req.body);
   try {
-    await mongoClient.connect();
-    database = mongoClient.db(DATABASE);
-    const result = await participantsSchema.validateAsync(req.body)
+    const result = await participantsSchema.validateAsync(req.body);
     console.log(result);
-    const doesExist = await database.collection("users").findOne({name:result.name})
-    console.log(doesExist);
-    if(doesExist){
-      res.sendStatus(409)
-      return
+    const doesExist = await database
+      .collection("users")
+      .findOne({ name: result.name });
+      console.log(doesExist);
+    if (doesExist) {
+      res.sendStatus(409);
+      return;
     }
     await database.collection("users").insertOne({
-      name:result.name,
+      name: result.name,
       lastStatus: Date.now(),
     });
     await database.collection("messages").insertOne({
@@ -46,14 +55,14 @@ app.post("/participants", async (req, res) => {
       time: hour,
     });
     res.sendStatus(201);
-    mongoClient.close();
-  } catch(error) {
+
+  } catch (error) {
     console.log(error);
-    if(error.isJoi === true){
-      res.sendStatus(422)
+    if (error.isJoi === true) {
+      res.sendStatus(422);
       return;
     }
-    res.sendStatus(500)
+    res.sendStatus(500);
   }
 });
 
@@ -68,7 +77,6 @@ app.get("/participants", (req, res) => {
       .then((users) => {
         res.send(users);
       });
-    mongoClient.close();
   });
   promise.catch(() => {
     res.send(404);
@@ -76,36 +84,50 @@ app.get("/participants", (req, res) => {
 });
 
 app.get("/messages", async (req, res) => {
-  const limit = parseInt(req.query.limit);
-  const user = req.headers.user;
+  const {limit} = req.query
+  const {user} = req.headers;
+
   try {
-    await mongoClient.connect();
-    database = mongoClient.db(process.env.DATABASE);
     const messages = await database
       .collection("messages")
       .find({ $or: [{ from: user }, { to: user }, { to: "Todos" }] })
       .toArray();
-    if (limit !== undefined) {
+    if (limit) {
       res.send(messages.slice(-limit));
-      mongoClient.close();
       return;
     }
     res.send(messages);
-  } catch {}
+  } catch {
+    res.sendStatus(500)
+  }
 });
 
 app.post("/messages", async (req, res) => {
   let message = req.body;
-  let user = req.headers.user;
-  message.from = user;
-  message.time = hour;
+  let {user} = req.headers
+  console.log(user);
+  let doesExist = null
   try {
-    await mongoClient.connect();
-    database = mongoClient.db(DATABASE);
-    await database.collection("messages").insertOne({ message });
+    const result = await messagesSchema.validateAsync(message);
+    console.log(result);
+    doesExist = await database.collection("users").findOne({name:message.to})
+    console.log(doesExist);
+    if(doesExist || message.to === "Todos"){
+      console.log("entrou");
+      message.from = user;
+      message.time = hour;
+    }else{
+      console.log("entrou no erro linha 119");
+      res.sendStatus(422);
+      return;
+    }
+    await database.collection("messages").insertOne( message );
     res.sendStatus(201);
-    mongoClient.close();
-  } catch {
+  } catch (error){
+    if (error.isJoi === true) {
+      res.sendStatus(422);
+      return;
+    }
     res.sendStatus(500);
   }
 });
@@ -113,13 +135,10 @@ app.post("/messages", async (req, res) => {
 app.post("/status", async (req, res) => {
   let user = req.headers.user;
   try {
-    await mongoClient.connect();
-    database = mongoClient.db(DATABASE);
     let userCollection = database.collection("users");
     let userDB = await userCollection.findOne({ name: user });
     if (userDB === null) {
       res.sendStatus(404);
-      mongoClient.close();
       return;
     }
     await userCollection.updateOne(
@@ -127,7 +146,6 @@ app.post("/status", async (req, res) => {
       { $set: { lastStatus: Date.now() } }
     );
     res.sendStatus(200);
-    mongoClient.close();
   } catch {
     res.sendStatus(500);
   }
@@ -135,8 +153,6 @@ app.post("/status", async (req, res) => {
 
 async function checkUsers() {
   try {
-    await mongoClient.connect();
-    database = mongoClient.db(DATABASE);
     let userCollection = await database.collection("users").find().toArray();
     userCollection.forEach((user) => {
       if (Date.now() - user.lastStatus > 10000) {
@@ -150,10 +166,12 @@ async function checkUsers() {
         });
       }
     });
-  } catch {}
+  } catch {
+    res.sendStatus(500)
+  }
 }
 
-setInterval(checkUsers, 2000);
+setInterval(checkUsers, 15000);
 
 const port = process.env.PORT;
 app.listen(port, () =>
