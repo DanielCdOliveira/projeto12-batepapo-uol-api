@@ -5,7 +5,7 @@ import { MongoClient } from "mongodb";
 import dotenv from "dotenv";
 import dayjs from "dayjs";
 import joi from "joi";
-import res from "express/lib/response";
+import { stripHtml } from "string-strip-html";
 
 const app = express();
 app.use(cors());
@@ -31,14 +31,15 @@ await mongoClient.connect();
 let database = mongoClient.db(DATABASE);
 
 app.post("/participants", async (req, res) => {
-  console.log(req.body);
+  const user = req.body;
+  user.name = stripHtml(user.name.trim()).result;
   try {
     const result = await participantsSchema.validateAsync(req.body);
-    console.log(result);
+
     const doesExist = await database
       .collection("users")
       .findOne({ name: result.name });
-      console.log(doesExist);
+
     if (doesExist) {
       res.sendStatus(409);
       return;
@@ -55,9 +56,7 @@ app.post("/participants", async (req, res) => {
       time: hour,
     });
     res.sendStatus(201);
-
   } catch (error) {
-    console.log(error);
     if (error.isJoi === true) {
       res.sendStatus(422);
       return;
@@ -84,8 +83,8 @@ app.get("/participants", (req, res) => {
 });
 
 app.get("/messages", async (req, res) => {
-  const {limit} = req.query
-  const {user} = req.headers;
+  const { limit } = req.query;
+  const { user } = req.headers;
 
   try {
     const messages = await database
@@ -98,32 +97,30 @@ app.get("/messages", async (req, res) => {
     }
     res.send(messages);
   } catch {
-    res.sendStatus(500)
+    res.sendStatus(500);
   }
 });
 
 app.post("/messages", async (req, res) => {
   let message = req.body;
-  let {user} = req.headers
-  console.log(user);
-  let doesExist = null
+  message.text = stripHtml(message.text.trim()).result;
+  let { user } = req.headers;
+  let doesExist = null;
   try {
-    const result = await messagesSchema.validateAsync(message);
-    console.log(result);
-    doesExist = await database.collection("users").findOne({name:message.to})
-    console.log(doesExist);
-    if(doesExist || message.to === "Todos"){
-      console.log("entrou");
+    await messagesSchema.validateAsync(message);
+    doesExist = await database
+      .collection("users")
+      .findOne({ name: message.to });
+    if (doesExist || message.to === "Todos") {
       message.from = user;
       message.time = hour;
-    }else{
-      console.log("entrou no erro linha 119");
+    } else {
       res.sendStatus(422);
       return;
     }
-    await database.collection("messages").insertOne( message );
+    await database.collection("messages").insertOne(message);
     res.sendStatus(201);
-  } catch (error){
+  } catch (error) {
     if (error.isJoi === true) {
       res.sendStatus(422);
       return;
@@ -167,7 +164,7 @@ async function checkUsers() {
       }
     });
   } catch {
-    res.sendStatus(500)
+    res.sendStatus(500);
   }
 }
 
