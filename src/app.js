@@ -189,6 +189,46 @@ app.delete("/messages/:id", async (req, res) => {
   } catch {}
 });
 
+//CHANGE MESSAGE
+app.put("/messages/:id", async (req, res) => {
+  const message = req.body;
+  message.text = stripHtml(message.text.trim()).result;
+  const user = req.headers.user;
+  const id = req.params.id;
+  try {
+    await messagesSchema.validateAsync(message);
+    let doesExist = await database
+      .collection("users")
+      .findOne({ name: message.to });
+    if (doesExist || message.to === "Todos") {
+      message.from = user;
+    } else {
+      res.sendStatus(422);
+      return;
+    }
+    let messageExist = await database
+      .collection("messages")
+      .findOne({ _id: new ObjectId(id) });
+    if (!messageExist) {
+      res.sendStatus(404);
+      return;
+    }
+    if (user !== message.from) {
+      res.sendStatus(401);
+      return;
+    }
+    database
+      .collection("messages")
+      .updateOne({ _id: new ObjectId(id) }, { $set: message });
+  } catch (error) {
+    if (error.isJoi === true) {
+      res.sendStatus(422);
+      return;
+    }
+    res.sendStatus(500);
+  }
+});
+
 // SERVER INICIALIZATION
 const port = process.env.PORT;
 app.listen(port, () =>
