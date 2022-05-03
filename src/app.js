@@ -1,12 +1,12 @@
 import express, { json } from "express";
 import chalk from "chalk";
 import cors from "cors";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 import dotenv from "dotenv";
 import dayjs from "dayjs";
 import joi from "joi";
 import { stripHtml } from "string-strip-html";
-
+// INICIALIZATION
 const app = express();
 app.use(cors());
 app.use(json());
@@ -15,21 +15,20 @@ dotenv.config();
 let hour = dayjs().format("HH:mm:ss");
 //ENV
 const DATABASE = process.env.DATABASE;
-//Joi
+//JOI
 const participantsSchema = joi.object({
   name: joi.string().min(1).required(),
 });
-
 const messagesSchema = joi.object({
   to: joi.string().min(1).required(),
   text: joi.string().min(1).required(),
   type: joi.any().valid("message", "private_message").required(),
 });
-
+// MONGODB CONNECTION
 const mongoClient = new MongoClient(process.env.MONGO_URL);
 await mongoClient.connect();
 let database = mongoClient.db(DATABASE);
-
+// PARTICIPANTS
 app.post("/participants", async (req, res) => {
   const user = req.body;
   user.name = stripHtml(user.name.trim()).result;
@@ -64,7 +63,6 @@ app.post("/participants", async (req, res) => {
     res.sendStatus(500);
   }
 });
-
 app.get("/participants", (req, res) => {
   const promise = mongoClient.connect();
   promise.then(() => {
@@ -82,6 +80,7 @@ app.get("/participants", (req, res) => {
   });
 });
 
+// MESSAGES
 app.get("/messages", async (req, res) => {
   const { limit } = req.query;
   const { user } = req.headers;
@@ -100,7 +99,6 @@ app.get("/messages", async (req, res) => {
     res.sendStatus(500);
   }
 });
-
 app.post("/messages", async (req, res) => {
   let message = req.body;
   message.text = stripHtml(message.text.trim()).result;
@@ -129,6 +127,7 @@ app.post("/messages", async (req, res) => {
   }
 });
 
+// STATUS
 app.post("/status", async (req, res) => {
   let user = req.headers.user;
   try {
@@ -148,6 +147,7 @@ app.post("/status", async (req, res) => {
   }
 });
 
+// CHECK USERS
 async function checkUsers() {
   try {
     let userCollection = await database.collection("users").find().toArray();
@@ -167,9 +167,29 @@ async function checkUsers() {
     res.sendStatus(500);
   }
 }
-
 setInterval(checkUsers, 15000);
 
+// DELETE MESSAGE
+app.delete("/messages/:id", async (req, res) => {
+  const user = req.headers.user;
+  const id = req.params.id;
+  try {
+    let message = await database
+      .collection("messages")
+      .findOne({ _id: new ObjectId(id) });
+    if (!message) {
+      res.sendStatus(404);
+      return;
+    }
+    if (user !== message.from) {
+      res.sendStatus(401);
+      return;
+    }
+    database.collection("messages").deleteOne({ _id: new ObjectId(id) });
+  } catch {}
+});
+
+// SERVER INICIALIZATION
 const port = process.env.PORT;
 app.listen(port, () =>
   console.log(chalk.bold.green(`Servidor em pé na porta ${port}`))
